@@ -5,23 +5,59 @@ const app = express();
 app.use(express.json());
 
 // ⚠️ YOUR TELEGRAM BOT TOKEN
-const BOT_TOKEN = '8508043458:AAG3dURU7M5uX7M2t1FGoMHiYP6mSFZP-hc';
+const BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN_HERE';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-let lastEspPing = 0; 
-let pendingCommands = []; // Holds commands for ESP32 when online
+// Both Chat IDs to receive the offline alert
+const CHAT_IDS = ['828079759', '2034653694']; 
+
+let lastEspPing = Date.now(); 
+let isOfflineAlertSent = false; // Prevents sending repeated alerts
+let pendingCommands = [];
 const OFFLINE_THRESHOLD = 45000; // 45 seconds timeout
 
-// 1. ESP32 calls this endpoint every 15s to check in AND fetch commands
+// Helper function to send alert to both users
+async function sendOfflineNotification() {
+  for (const chatId of CHAT_IDS) {
+    try {
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: chatId,
+        text: "🚨 *I will be on sleep 😴!*\nWill come back soon...⌛️",
+        parse_mode: 'Markdown'
+      });
+    } catch (err) {
+      console.error(`Failed to send alert to ${chatId}:`, err.message);
+    }
+  }
+}
+
+// 1. Background Monitor (Runs every 10 seconds on Render)
+setInterval(() => {
+  const timeSinceLastPing = Date.now() - lastEspPing;
+
+  // Check if ESP32 missed pings for > 45s AND we haven't alerted yet
+  if (timeSinceLastPing > OFFLINE_THRESHOLD && !isOfflineAlertSent) {
+    console.log("ESP32 lost connection! Sending offline alerts...");
+    sendOfflineNotification();
+    isOfflineAlertSent = true; // Mark as sent so it doesn't spam
+  }
+}, 10000);
+
+// 2. ESP32 Heartbeat Endpoint
 app.get('/ping', (req, res) => {
   lastEspPing = Date.now();
   
-  // Send any waiting Telegram commands back to ESP32, then clear queue
+  // If ESP32 was offline and comes back online, reset flag
+  if (isOfflineAlertSent) {
+    isOfflineAlertSent = false;
+  }
+
+  // Return pending commands to ESP32
   res.json({ commands: pendingCommands });
   pendingCommands = [];
 });
 
-// 2. Telegram Webhook endpoint
+// 3. Telegram Webhook Endpoint
 app.post('/telegram-webhook', async (req, res) => {
   const message = req.body.message;
   
@@ -29,15 +65,12 @@ app.post('/telegram-webhook', async (req, res) => {
     const chatId = message.chat.id;
     const timeSinceLastPing = Date.now() - lastEspPing;
 
-    // IF OFFLINE: Auto-reply
     if (timeSinceLastPing > OFFLINE_THRESHOLD) {
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: chatId,
         text: "⚠️ Lachu is offline at the moment. Pls try after some time"
       });
-    } 
-    // IF ONLINE: Store command for ESP32 to fetch on next ping or trigger execution
-    else {
+    } else {
       pendingCommands.push({
         chat_id: chatId,
         text: message.text
