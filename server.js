@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // ⚠️ YOUR TELEGRAM BOT TOKEN
-const BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN_HERE';
+const BOT_TOKEN = '8508043458:AAG3dURU7M5uX7M2t1FGoMHiYP6mSFZP-hc';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // Both Chat IDs to receive the offline alert
@@ -68,7 +68,7 @@ app.post('/telegram-webhook', async (req, res) => {
     if (timeSinceLastPing > OFFLINE_THRESHOLD) {
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: chatId,
-        text: "⚠️ Lachu is offline at the moment. Pls try after some time"
+        text: "⚠️ Lachu is offline at the moment. Pls try after some time..."
       });
     } else {
       pendingCommands.push({
